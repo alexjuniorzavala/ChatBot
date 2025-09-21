@@ -7,7 +7,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 
-# Caminho para o driver (ajuste se necessário)
 service = Service(executable_path="msedgedriver.exe")
 
 # Configura opções para usar o perfil existente
@@ -21,8 +20,17 @@ driver = webdriver.Edge(service=service, options=options)
 # Abre o WhatsApp Web – se a sessão existir, não pedirá QR Code novamente
 driver.get('https://web.whatsapp.com')
 print("Aguardando carregamento... Se já logado, deve abrir direto.")
+
+# Search for new notifications
+wait = WebDriverWait(driver, 5)
+noti_cls = "x1rg5ohu"
+time.sleep(20)
+noti = driver.find_elements(By.CLASS_NAME, noti_cls)
+noti.click
+
+
 input("Pressione Enter após garantir que o WhatsApp Web está carregado...")
-# Seu loop de monitoramento aqui (do código anterior)
-# ...
+
+
 
 driver.quit()
