@@ -3,6 +3,11 @@ from selenium.webdriver.common.keys import  Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException,
+    StaleElementReferenceException,
+    NoSuchElementException
+)
 import time
 
 # Ajuste para manter sessão logada
@@ -28,52 +33,96 @@ print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 5)
 
 # XPaths
-noti_xpath = "//div[@class='_ak8j']//div[@role='gridcell']//span//span//span[contains(@class,'x140p0ai')]"
+notif_xpath = "//div[@class='_ak8j']//div[@role='gridcell']//span//span//span[contains(@class,'x140p0ai')]"
 msg_in_xpath = '//div[contains(@class,"message-in")]//span[@dir="ltr"]'
+chat_rows_xpath = '//div[@role="row"]'
+title_element_xpath = './/span[@title]'
 msg_out_xpath = '//div[contains(@class,"message-out")]//span[@dir="ltr"]'
 sapp_input_xpath = '//*[@id="main"]/footer/div[1]/div/span/div/div[2]/div/div[3]/div[1]'
 
 # Espera até a barra lateral aparecer
-WebDriverWait(driver, 240).until(EC.presence_of_element_located((By.ID, "side")))
+WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side")))
 
 while True:
-    bolhas = driver.find_elements(By.XPATH, noti_xpath)
-    print(f"Encontradas {len(bolhas)} bolinhas de notificação.")
+    try:
+        # Cada "linha de chat"
+        chat_rows = driver.find_elements(By.XPATH, chat_rows_xpath)
+        print(f"Found {len(chat_rows)} notification bubbles.")
 
-    if bolhas:
-        for chat in bolhas:
-            print(chat.text)
-            chat.click()
-            print("Abri a conversa.")
 
-            time.sleep(5)
-            
-            #Finding received Messages
+        for row in chat_rows:
             try:
-                wait.until(EC.presence_of_element_located((By.XPATH, msg_in_xpath)))
-                messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
-                
-                for msg in messages_in:
-                    print("Pessoa:", msg.text)    
+                # Nome/título do contato
+                title_element = row.find_element(By.XPATH, title_element_xpath)
+                title = title_element.get_attribute("title")
+
+                # Bolinha de notificação (se existir)
+                try:
+                    print("Verificando notificações...")
+                    notif_element = row.find_element(By.XPATH, notif_xpath)
+                    notif_count = notif_element.text
+                except:
+                    notif_count = "0"
+
+                print(f"Contact: {title}, Notifications: {notif_count}")
+
+                # Se houver notificações, abrir o chat
+                if notif_count != "0":
+                    try:
+                        row.click()
+                        print("Opened the conversation.")
+
+                        # Mensagens recebidas
+                        try:
+                            wait.until(EC.presence_of_element_located((By.XPATH, msg_in_xpath)))
+                            messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
+                            for msg in messages_in:
+                                try:
+                                    print("Person:", msg.text)
+                                except StaleElementReferenceException:
+                                    print("Message changed, reloading incoming messages...")
+                                    messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
+                                    for msg in messages_in:
+                                        print("Person:", msg.text)
+                        except TimeoutException:
+                            print("No incoming messages found yet.")
+
+                        # Mensagens enviadas
+                        try:
+                            wait.until(EC.presence_of_element_located((By.XPATH, msg_out_xpath)))
+                            messages_out = driver.find_elements(By.XPATH, msg_out_xpath)
+                            for msg in messages_out:
+                                try:
+                                    print("Me:", msg.text)
+                                except StaleElementReferenceException:
+                                    print("Message changed, reloading outgoing  messages...")
+                                    messages_out = driver.find_elements(By.XPATH, msg_out_xpath)
+                                    for msg in messages_out:
+                                        print("Eu:", msg.text)
+                        except TimeoutException:
+                            print("No outgoing messages found yet.")
+
+                        # Resposta do chatbot
+                        try:
+                            chat_input = driver.find_element(By.XPATH, sapp_input_xpath)
+                            chat_input.send_keys("Hello! This is a test")
+                            print("Message sent!")
+                        except (NoSuchElementException, StaleElementReferenceException):
+                            print("Cannot send messages in this chat (admins only?).")
+
+                        # Pergunta se deseja repetir
+                        close = input("Repeat? (Y/N): ").strip().upper()
+                        if close == "N":
+                            driver.quit()
+                            exit()
+
+                    except Exception as e:
+                        print("Erro ao manipular chat:", e)
+
             except:
-                print("Nenhuma mensagem recebida encontrada ainda.")
-                
-            #Finding sent Messages
-            try:
-                wait.until(EC.presence_of_element_located((By.XPATH, msg_out_xpath)))
-                messages_out = driver.find_elements(By.XPATH, msg_out_xpath)
-                
-                for msg in messages_out:
-                    print("Eu:", msg.text)
-            except:
-                print("Nenhuma mensagem enviada encontrada ainda.")
-                
-            #Chatbot Response
-            chat_input = driver.find_element(By.XPATH, sapp_input_xpath)
-            try:
-                chat_input.send_keys("Ola! Isso é um teste" + Keys.ENTER)
-            except:
-                print("Apenas administradores podem enviar mensagens!")
-            close = input("Repetir?S/N")
-            if close == "S":
-                driver.quit()
+                continue
+
+
+    except Exception as e:
+        print("General error:", e)
+        time.sleep(5)
