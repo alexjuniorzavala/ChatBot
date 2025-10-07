@@ -26,7 +26,7 @@ wait = WebDriverWait(driver, 5)
 noti_cls = "x1rg5ohu"
 time.sleep(20)
 noti = driver.find_elements(By.CLASS_NAME, noti_cls)
-noti.click
+noti[0].click
 
 
 input("Pressione Enter após garantir que o WhatsApp Web está carregado...")

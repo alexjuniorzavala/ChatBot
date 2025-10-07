@@ -33,13 +33,13 @@ print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 5)
 
 # XPaths
-notif_xpath = "//div[@class='_ak8j']//div[@role='gridcell']//span//span//span[contains(@class,'x140p0ai')]"
+notif_xpath = ".//span[contains(@class,'x140p0ai')]"
 msg_in_xpath = '//div[contains(@class,"message-in")]//span[@dir="ltr"]'
 chat_rows_xpath = '//div[@role="row"]'
 title_element_xpath = './/span[@title]'
 msg_out_xpath = '//div[contains(@class,"message-out")]//span[@dir="ltr"]'
 sapp_input_xpath = '//*[@id="main"]/footer/div[1]/div/span/div/div[2]/div/div[3]/div[1]'
-
+chatbot_url = "https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02"
 # Espera até a barra lateral aparecer
 WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side")))
 
@@ -62,6 +62,7 @@ while True:
                     notif_element = row.find_element(By.XPATH, notif_xpath)
                     notif_count = notif_element.text
                 except:
+                    print("No notifications found. notif_count = '0'")
                     notif_count = "0"
 
                 print(f"Contact: {title}, Notifications: {notif_count}")
@@ -101,6 +102,8 @@ while True:
                                         print("Eu:", msg.text)
                         except TimeoutException:
                             print("No outgoing messages found yet.")
+                        # Com base no numero de notificacoes pegue as mesagens recebidas nao lidas, abre a pagina chatbot(url na variavel chatgpt_url) numa outra aba(se nao estiver aberto ainda)
+
 
                         # Resposta do chatbot
                         try:
