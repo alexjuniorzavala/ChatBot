@@ -29,8 +29,10 @@ options.add_argument("--disable-dev-shm-usage")
 driver = uc.Chrome(driver_executable_path=path_driver, options=options)
 driver.get("https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02")
 
-print("Aguardando WhatsApp Web carregar...")
-wait = WebDriverWait(driver, 5)
+print("Aguardando chatbot carregar...")
+wait = WebDriverWait(driver, 20)
+#XPATH input
+chatgpt_input_xpath = '//div[@contenteditable="true" and @data-placeholder="Pergunte qualquer coisa"]'  # Adjusted to target the contenteditable div
 
 # XPath para capturar as mensagens do chatbot
 chatbot_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
@@ -42,8 +44,8 @@ chatbot_messages = driver.find_elements(By.XPATH, chatbot_messages_xpath)
 
 for msg in chatbot_messages:
     print("Chatbot:", msg.text)
-    
-input("Digite enter para sair")
-	
-time.sleep(3)
+
+input("Clique para sair")
 driver.quit()
+
+
