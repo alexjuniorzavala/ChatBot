@@ -30,25 +30,35 @@ driver.get("https://web.whatsapp.com")
 
 print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 10)
-input()
-driver.quit()
+
 # XPaths
 notif_xpath = ".//span[contains(@class,'x140p0ai')]"
+unread_filter_xpath = '//div[@aria-label="chat-list-filters"]//button[@id="unread-filter"]'
 msg_in_xpath = '//div[contains(@class,"message-in")]//span[@dir="ltr"]'
 chat_rows_xpath = '//div[@role="row"]'
 title_element_xpath = './/span[@title]'
 msg_out_xpath = '//div[contains(@class,"message-out")]//span[@dir="ltr"]'
-whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa")]'
-chatbot_url = "https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02"
+whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa") or contains(@aria-label, "Escreva no grupo")]'
+attachment_button_xpath = '//span[@data-icon="plus-rounded"]'
+file_input_xpath = '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]'  # For images/videos
+document_input_xpath = '//input[@accept="*"]'  # For documents
+send_file_button_xpath = '//div[@class="x1n2onr6"]//div[@aria-label="Enviar"]'
 
 # ChatGPT XPaths
+chatbot_url = "https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02"
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
 chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
+chatgpt_links_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]//a[@href]"  # New XPath for links
 chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Parar transmissão"]'
 
 # Espera até a barra lateral aparecer
 WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side")))
+
+# Filtrar mensagens não lidas
+wait.until(EC.presence_of_element_located((By.XPATH, unread_filter_xpath)))
+unread_filter = driver.find_element(By.XPATH, unread_filter_xpath)
+unread_filter.click()
 
 # Variables for tab handles
 whatsapp_handle = driver.current_window_handle
@@ -57,7 +67,7 @@ chatbot_handle = None
 # JavaScript snippet for WhatsApp's contenteditable input
 def paste_content(driver, el, content):
     driver.execute_script(
-      f'''
+        f'''
 const text = `{content}`;
 const dataTransfer = new DataTransfer();
 dataTransfer.setData('text', text);
@@ -67,7 +77,7 @@ const event = new ClipboardEvent('paste', {{
 }});
 arguments[0].dispatchEvent(event)
 ''',
-      el)
+        el)
 
 # Function to open ChatGPT tab if not open
 def open_chatbot_tab():
@@ -103,7 +113,7 @@ def get_chatgpt_response(message):
             )
             clear_input_field(input_elem)
             paste_content(driver, input_elem, message)
-          
+            
             # Try clicking send button
             try:
                 send_button = WebDriverWait(driver, 5).until(
@@ -137,12 +147,29 @@ def get_chatgpt_response(message):
             # Capture the full response
             for _ in range(3):  # Retry to handle stale elements
                 try:
+                    # Get text content
                     messages = driver.find_elements(By.XPATH, chatgpt_messages_xpath)
-                    if messages:
-                        latest_response = messages[-1].text.strip()
-                        if latest_response:
-                            print(f"ChatGPT response: {latest_response}")
-                            return latest_response
+                    if not messages:
+                        print("No messages found.")
+                        return None
+                    latest_response = messages[-1].text.strip()
+                    
+                    # Get links
+                    links = []
+                    link_elements = latest_response.find_elements(By.XPATH, chatgpt_links_xpath)
+                    for link_elem in link_elements:
+                        href = link_elem.get_attribute('href')
+                        if href:
+                            links.append(href)
+                    
+                    # Combine text and links
+                    combined_response = latest_response
+                    if links:
+                        combined_response += "\nLinks:\n" + "\n".join(links)
+                    
+                    if combined_response:
+                        print(f"ChatGPT response: {combined_response}")
+                        return combined_response
                     time.sleep(2)
                 except StaleElementReferenceException:
                     print("Stale element detected, retrying to capture response...")
@@ -153,6 +180,34 @@ def get_chatgpt_response(message):
             time.sleep(1)
     print("Failed to send message to ChatGPT after retries.")
     return None
+
+def send_file_to_whatsapp(chat_input, file_path):
+    try:
+        if not os.path.exists(file_path):
+            print(f"File not found: {file_path}")
+            return False
+        
+        # Click attachment button
+        wait.until(EC.element_to_be_clickable((By.XPATH, attachment_button_xpath)))
+        attachment_button = driver.find_element(By.XPATH, attachment_button_xpath)
+        attachment_button.click()
+        print("Clicked attachment button.")
+
+        # Select file input (assuming image/video for this example)
+        wait.until(EC.presence_of_element_located((By.XPATH, file_input_xpath)))
+        file_input = driver.find_element(By.XPATH, file_input_xpath)
+        file_input.send_keys(file_path)
+        print(f"Selected file: {file_path}")
+
+        # Wait for preview and click send
+        wait.until(EC.element_to_be_clickable((By.XPATH, send_file_button_xpath)))
+        send_button = driver.find_element(By.XPATH, send_file_button_xpath)
+        send_button.click()
+        print("File sent successfully.")
+        return True
+    except Exception as e:
+        print(f"Error sending file: {e}")
+        return False
 
 try:
     while True:
@@ -176,11 +231,10 @@ try:
                         notif_count = int(notif_element.text)
                     except:
                         notif_count = 0
-                    # input()
+                    
+                    # Skip specific contact
                     if title == "Eng. Electrónica UEM 2025":
-                        notif_count=0
-                    # else:
-                        # notif_count=0
+                        notif_count = 0
                         
                     print(f"Contact: {title}, Notifications: {notif_count}")
                     
@@ -215,17 +269,15 @@ try:
                                 # Switch back to WhatsApp
                                 driver.switch_to.window(whatsapp_handle)
                                 
-                                # Send response using JavaScript
+                                # Send response using paste_content
                                 try:
                                     chat_input = WebDriverWait(driver, 10).until(
                                         EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath))
                                     )
                                     clear_input_field(chat_input)
                                     paste_content(driver, chat_input, response)
-                                    # send = input("Enviar Messagem?(s/n)").strip().lower()                                    
-                                    # if send == "s":
-                                        # chat_input.send_keys(Keys.ENTER)  # Trigger send
-                                        # print(f"Sent response to {title}: {response}")
+                                    chat_input.send_keys(Keys.ENTER)  # Trigger send
+                                    print(f"Sent response to {title}: {response}")
                                 except Exception as e:
                                     print(f"Error sending response to WhatsApp: {e}")
                             else:
@@ -238,17 +290,13 @@ try:
                     print(f"Error processing row: {e}")
                     continue
 
+            # Press ESCAPE to clear any dialogs
+            driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+
+            time.sleep(5)
+
         except Exception as e:
             print(f"General error: {e}")
-        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-
-        time.sleep(5)
-
-        # Optional: Add user input to exit
-        # user_input = input("Press Enter to continue checking, or type 'exit' to stop: ").strip().lower()
-        # if user_input == 'exit':
-            # print("Exiting script...")
-            # break
 
 except KeyboardInterrupt:
     print("Script interrupted by user.")
