@@ -9,6 +9,7 @@ from selenium.common.exceptions import (
     NoSuchElementException
 )
 import time
+import sys
 
 # Ajuste para manter sessão logada
 user_data = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfile"
@@ -29,21 +30,22 @@ driver.get("https://web.whatsapp.com")
 
 print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 10)
-
+input()
+driver.quit()
 # XPaths
 notif_xpath = ".//span[contains(@class,'x140p0ai')]"
 msg_in_xpath = '//div[contains(@class,"message-in")]//span[@dir="ltr"]'
 chat_rows_xpath = '//div[@role="row"]'
 title_element_xpath = './/span[@title]'
 msg_out_xpath = '//div[contains(@class,"message-out")]//span[@dir="ltr"]'
-whatsapp_input_xpath = '//*[@id="main"]/footer/div[1]/div/span/div/div[2]/div/div[3]/div[1]'
+whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa")]'
 chatbot_url = "https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02"
 
 # ChatGPT XPaths
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
-chatgpt_send_button_xpath = '//button[@aria-label="Enviar mensagem" or contains(@class, "send-button")]'
+chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
 chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
-chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Stop streaming"]'
+chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Parar transmissão"]'
 
 # Espera até a barra lateral aparecer
 WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side")))
@@ -51,6 +53,21 @@ WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side"))
 # Variables for tab handles
 whatsapp_handle = driver.current_window_handle
 chatbot_handle = None
+
+# JavaScript snippet for WhatsApp's contenteditable input
+def paste_content(driver, el, content):
+    driver.execute_script(
+      f'''
+const text = `{content}`;
+const dataTransfer = new DataTransfer();
+dataTransfer.setData('text', text);
+const event = new ClipboardEvent('paste', {{
+  clipboardData: dataTransfer,
+  bubbles: true
+}});
+arguments[0].dispatchEvent(event)
+''',
+      el)
 
 # Function to open ChatGPT tab if not open
 def open_chatbot_tab():
@@ -85,8 +102,8 @@ def get_chatgpt_response(message):
                 EC.presence_of_element_located((By.XPATH, chatgpt_input_xpath))
             )
             clear_input_field(input_elem)
-            input_elem.send_keys(message)
-            
+            paste_content(driver, input_elem, message)
+          
             # Try clicking send button
             try:
                 send_button = WebDriverWait(driver, 5).until(
@@ -137,94 +154,107 @@ def get_chatgpt_response(message):
     print("Failed to send message to ChatGPT after retries.")
     return None
 
-while True:
-    try:
-        # Switch back to WhatsApp tab
-        driver.switch_to.window(whatsapp_handle)
-        
-        # Cada "linha de chat"
-        chat_rows = driver.find_elements(By.XPATH, chat_rows_xpath)
-        print(f"Found {len(chat_rows)} chat rows.")
+try:
+    while True:
+        try:
+            # Switch back to WhatsApp tab
+            driver.switch_to.window(whatsapp_handle)
+            
+            # Cada "linha de chat"
+            chat_rows = driver.find_elements(By.XPATH, chat_rows_xpath)
+            print(f"Found {len(chat_rows)} chat rows.")
 
-        for row in chat_rows:
-            try:
-                # Nome/título do contato
-                title_element = row.find_element(By.XPATH, title_element_xpath)
-                title = title_element.get_attribute("title")
-
-                # Bolinha de notificação (se existir)
+            for row in chat_rows:
                 try:
-                    notif_element = row.find_element(By.XPATH, notif_xpath)
-                    notif_count = int(notif_element.text)
-                except:
-                    notif_count = 0
+                    # Nome/título do contato
+                    title_element = row.find_element(By.XPATH, title_element_xpath)
+                    title = title_element.get_attribute("title")
 
-                print(f"Contact: {title}, Notifications: {notif_count}")
-
-                # Se houver notificações, abrir o chat
-                if notif_count > 0:
+                    # Bolinha de notificação (se existir)
                     try:
-                        row.click()
-                        print(f"Opened conversation with {title}.")
+                        notif_element = row.find_element(By.XPATH, notif_xpath)
+                        notif_count = int(notif_element.text)
+                    except:
+                        notif_count = 0
+                    # input()
+                    if title == "Eng. Electrónica UEM 2025":
+                        notif_count=0
+                    # else:
+                        # notif_count=0
+                        
+                    print(f"Contact: {title}, Notifications: {notif_count}")
+                    
+                    # Se houver notificações, abrir o chat
+                    if notif_count > 0:
+                        try:
+                            row.click()
+                            print(f"Opened conversation with {title}.")
 
-                        # Wait for messages to load
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.XPATH, msg_in_xpath))
-                        )
+                            # Wait for messages to load
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.XPATH, msg_in_xpath))
+                            )
 
-                        # Get all incoming messages
-                        messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
-                        
-                        # Assume the last notif_count are unread
-                        unread_messages = [msg.text.strip() for msg in messages_in[-notif_count:]]
-                        if not unread_messages:
-                            print("No unread messages found.")
-                            continue
-                        
-                        print(f"Unread messages from {title}: {unread_messages}")
-                        
-                        # Join unread messages into one string
-                        combined_message = "\n".join(unread_messages)
-                        
-                        # Get response from ChatGPT
-                        response = get_chatgpt_response(combined_message)
-                        if response:
-                            # Switch back to WhatsApp
-                            driver.switch_to.window(whatsapp_handle)
+                            # Get all incoming messages
+                            messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
                             
-                            # Send response
-                            try:
-                                chat_input = WebDriverWait(driver, 10).until(
-                                    EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath))
-                                )
-                                chat_input.click()
-                                input("Clique Enter para continuar")
-                                chat_input.send_keys(response)
-                                input("Clique Enter para continuar")
-                                chat_input.send_keys(Keys.ENTER)
-                                input("Clique Enter para continuar")
-                                print(f"Sent response to {title}: {response}")
-                            except Exception as e:
-                                print(f"Error sending response to WhatsApp: {e}")
-                        else:
-                            print("No response from ChatGPT.")
+                            # Assume the last notif_count are unread
+                            unread_messages = [msg.text.strip() for msg in messages_in[-notif_count:]]
+                            if not unread_messages:
+                                print("No unread messages found.")
+                                continue
+                            
+                            print(f"Unread messages from {title}: {unread_messages}")
+                            
+                            # Join unread messages into one string
+                            combined_message = "\n".join(unread_messages)
+                            
+                            # Get response from ChatGPT
+                            response = get_chatgpt_response(combined_message)
+                            if response:
+                                # Switch back to WhatsApp
+                                driver.switch_to.window(whatsapp_handle)
+                                
+                                # Send response using JavaScript
+                                try:
+                                    chat_input = WebDriverWait(driver, 10).until(
+                                        EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath))
+                                    )
+                                    clear_input_field(chat_input)
+                                    paste_content(driver, chat_input, response)
+                                    # send = input("Enviar Messagem?(s/n)").strip().lower()                                    
+                                    # if send == "s":
+                                        # chat_input.send_keys(Keys.ENTER)  # Trigger send
+                                        # print(f"Sent response to {title}: {response}")
+                                except Exception as e:
+                                    print(f"Error sending response to WhatsApp: {e}")
+                            else:
+                                print("No response from ChatGPT.")
 
-                    except Exception as e:
-                        print(f"Error handling chat with {title}: {e}")
+                        except Exception as e:
+                            print(f"Error handling chat with {title}: {e}")
 
-            except Exception as e:
-                print(f"Error processing row: {e}")
-                continue
-    
-            close = input("Repetir?S/N")
-            if close == "S":
-                driver.quit()
+                except Exception as e:
+                    print(f"Error processing row: {e}")
+                    continue
 
-    except Exception as e:
-        print(f"General error: {e}")
-    
-    # Small delay to avoid high CPU usage
-    time.sleep(5)
+        except Exception as e:
+            print(f"General error: {e}")
+        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
 
-# Cleanup
-driver.quit()
+        time.sleep(5)
+
+        # Optional: Add user input to exit
+        # user_input = input("Press Enter to continue checking, or type 'exit' to stop: ").strip().lower()
+        # if user_input == 'exit':
+            # print("Exiting script...")
+            # break
+
+except KeyboardInterrupt:
+    print("Script interrupted by user.")
+
+finally:
+    # Cleanup
+    print("Cleaning up...")
+    driver.quit()
+    sys.exit(0)

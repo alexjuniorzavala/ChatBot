@@ -1,5 +1,5 @@
 import undetected_chromedriver as uc
-from selenium.webdriver.common.keys import  Keys
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -24,28 +24,50 @@ options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 
-
-
 driver = uc.Chrome(driver_executable_path=path_driver, options=options)
-driver.get("https://chatgpt.com/g/g-p-68d82477fda0819186d2894fa194fad0-atendimento/c/68d82533-a3c4-8333-ab33-c4868ab03b02")
 
-print("Aguardando chatbot carregar...")
+# Updated JavaScript snippet for WhatsApp's contenteditable input
+def paste_content(driver, el, content):
+    driver.execute_script(
+      f'''
+const text = `{content}`;
+const dataTransfer = new DataTransfer();
+dataTransfer.setData('text', text);
+const event = new ClipboardEvent('paste', {{
+  clipboardData: dataTransfer,
+  bubbles: true
+}});
+arguments[0].dispatchEvent(event)
+''',
+      el)
+
+
+chat_rows_xpath = '//div[@role="row"]'
+title_element_xpath = './/span[@title]'
+whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa")]'
+
+driver.get("https://web.whatsapp.com")
+print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 20)
-#XPATH input
-chatgpt_input_xpath = '//div[@contenteditable="true" and @data-placeholder="Pergunte qualquer coisa"]'  # Adjusted to target the contenteditable div
+WebDriverWait(driver, 600).until(EC.presence_of_element_located((By.ID, "side")))
 
-# XPath para capturar as mensagens do chatbot
-chatbot_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
+# Cada "linha de chat"
+chat_rows = driver.find_elements(By.XPATH, chat_rows_xpath)
+print(f"Found {len(chat_rows)} chat rows.")
 
-# Encontrar todos os elementos de resposta do chatbot
-wait.until(EC.presence_of_element_located((By.XPATH, chatbot_messages_xpath)))
+if chat_rows:
+    chat_rows[0].click()
+    time.sleep(2)  # Small delay to ensure chat loads
+    wait.until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
+    input_elem = driver.find_element(By.XPATH, whatsapp_input_xpath)  # Use find_element (singular)
+    
+    input('Press Enter to send "Ola"')
+    msg="👏ola"
+    paste_content(driver, input_elem, msg)
+    input_elem.send_keys(Keys.ENTER)  # Send the message
 
-chatbot_messages = driver.find_elements(By.XPATH, chatbot_messages_xpath)
+    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
 
-for msg in chatbot_messages:
-    print("Chatbot:", msg.text)
+input("Press ENTER to exit")
 
-input("Clique para sair")
 driver.quit()
-
-
