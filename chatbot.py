@@ -26,30 +26,30 @@ options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 
 driver = uc.Chrome(driver_executable_path=path_driver, options=options)
-
+# driver = uc.Chrome(driver_executable_path=path_driver)
 # Updated JavaScript snippet for WhatsApp's contenteditable input
-def paste_content(driver, el, content):
-    driver.execute_script(
-      f'''
-const text = `{content}`;
-const dataTransfer = new DataTransfer();
-dataTransfer.setData('text', text);
-const event = new ClipboardEvent('paste', {{
-  clipboardData: dataTransfer,
-  bubbles: true
-}});
-arguments[0].dispatchEvent(event)
-''',
-      el)
+# def paste_content(driver, el, content):
+    # driver.execute_script(
+      # f'''
+# const text = `{content}`;
+# const dataTransfer = new DataTransfer();
+# dataTransfer.setData('text', text);
+# const event = new ClipboardEvent('paste', {{
+  # clipboardData: dataTransfer,
+  # bubbles: true
+# }});
+# arguments[0].dispatchEvent(event)
+# ''',
+      # el)
 
 
-chat_rows_xpath = '//div[@role="row"]'
-title_element_xpath = './/span[@title]'
-whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa")]'
-attachment_button_xpath = '//span[@data-icon="plus-rounded"]'
-file_input_xpath = '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]'  # For images/videos
-document_input_xpath = '//input[@accept="*"]'  # For documents
-send_file_button_xpath = '//div[@class="x1n2onr6"]//div[@aria-label="Enviar"]'
+# chat_rows_xpath = '//div[@role="row"]'
+# title_element_xpath = './/span[@title]'
+# whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and contains(@aria-label, "Escreva na conversa")]'
+# attachment_button_xpath = '//span[@data-icon="plus-rounded"]'
+# file_input_xpath = '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]'  # For images/videos
+# document_input_xpath = '//input[@accept="*"]'  # For documents
+# send_file_button_xpath = '//div[@class="x1n2onr6"]//div[@aria-label="Enviar"]'
 
 driver.get("https://chatgpt.com")
 print("Aguardando WhatsApp Web carregar...")
@@ -94,12 +94,12 @@ wait = WebDriverWait(driver, 20)
     # time.sleep(2)  # Small delay to ensure chat loads
     # wait.until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
     # file_path = r"D:\Alex\Vendas\InfoProdutos\Guia do Empreendedor\Annotation 2025-06-23 114739.png"
-time.sleep(10)
-chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
-WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, chatgpt_input_xpath)))    
-driver.get_screenshot_as_file("screenshot.png")
-print(driver.execute_script("return document.querySelector('div[aria-owns=\"emoji-suggestion\"][aria-label*=\"Escreva na conversa\"], div[aria-owns=\"emoji-suggestion\"][aria-label*=\"Escreva no grupo\"]')"))
-print(driver.execute_script("return document.querySelector('div[@id=\"prompt-textarea\"]')"))
+time.sleep(30)
+# chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
+# WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, chatgpt_input_xpath)))    
+# driver.get_screenshot_as_file("screenshot.png")
+# print(driver.execute_script("return document.querySelector('div[aria-owns=\"emoji-suggestion\"][aria-label*=\"Escreva na conversa\"], div[aria-owns=\"emoji-suggestion\"][aria-label*=\"Escreva no grupo\"]')"))
+# print(driver.execute_script("return document.querySelector('div[@id=\"prompt-textarea\"]')"))
 
 
 

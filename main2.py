@@ -48,12 +48,17 @@ wait = WebDriverWait(driver, 10)
 
 # XPaths
 notif_xpath = ".//span[contains(@class,'x140p0ai')]"
-unread_filter_xpath = '//div[@aria-label="chat-list-filters"]//button[@id="unread-filter"]'
+unread_filter_page_xpath = '//div[@aria-placeholder="Procurar nas conversas não lidas"]'
+unread_filter_xpath = '//div[@aria-label="chat-list-filters"]//div[@id="unread-filter"]'
 msg_in_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-in")]//span[@class="_ao3e selectable-text copyable-text"]'
 msg_out_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-out")]//span[@class="_ao3e selectable-text copyable-text"]'
 chat_rows_xpath = '//div[contains(@class,"x1g42fcv")]'
 title_element_xpath = './/span[@title or contains(@class, "x1qlqyl8")]'
 whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and (contains(@aria-label, "Escreva na conversa") or contains(@aria-label, "Escreva no grupo"))]'
+attachment_button_xpath = '//span[@data-icon="plus-rounded"]'
+file_input_xpath = '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]'  # For images/videos
+document_input_xpath = '//input[@accept="*"]'  # For documents
+send_file_button_xpath = '//div[@class="x1n2onr6"]//div[@aria-label="Enviar"]'
 captcha_xpath = '//iframe[contains(@src, "recaptcha")]'
 qr_code_xpath = '//canvas[@aria-label="Scan me!"]'
 
@@ -63,6 +68,19 @@ chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
 chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
 chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Parar transmissão"]'
+
+# Dicionário de comandos → lista de arquivos
+COMANDOS_FOTOS = {
+    "PRINTS_LIVRO_DE_RECEITAS": [
+        r"D:\Alex\Vendas\InfoProdutos\Receitas\PRINTS_LIVRO_DE_RECEITAS\PRINTS_LIVRO_DE_RECEITAS1.png",
+        r"D:\Alex\Vendas\InfoProdutos\Receitas\PRINTS_LIVRO_DE_RECEITAS\PRINTS_LIVRO_DE_RECEITAS2.png",
+        # Adicione mais se quiser
+    ],
+    "AMOSTRA_DO_LIVRO": [
+        r"D:\Alex\Vendas\InfoProdutos\Receitas\Amostra_do_livro.pdf"
+    ],
+    # Adicione outros comandos aqui
+}
 
 # Check for CAPTCHA or QR code
 # try:
@@ -122,6 +140,84 @@ arguments[0].dispatchEvent(event)
             el)
     except Exception as e:
         print(f"Error in paste_content: {e}")
+        
+
+def process_ai_response(response, chat_input):
+    """
+    Processa a resposta do ChatGPT:
+    - Detecta comandos [ENVIAR_FOTO:XXX]
+    - Remove os comandos
+    - Envia as fotos correspondentes
+    - Envia o texto limpo
+    """
+    if not response:
+        return False
+
+    # Regex para capturar todos os tokens [ENVIAR_FOTO:XXX]
+    pattern = r'\[ENVIAR_DOCUMENTO:([^\]]+)\]'
+    comandos_encontrados = re.findall(pattern, response)
+
+    # Remove todos os tokens do texto
+    texto_limpo = re.sub(pattern, '', response).strip()
+
+    # Envia o texto limpo (se houver)
+    if texto_limpo:
+        clear_input_field(chat_input)
+        paste_content(driver, chat_input, texto_limpo)
+        chat_input.send_keys(Keys.ENTER)
+        print(f"Texto enviado: {texto_limpo}")
+        time.sleep(1)  # Pequena pausa entre texto e foto
+
+    # Envia as fotos, se houver comandos
+    if comandos_encontrados:
+        for comando in comandos_encontrados:
+            if comando in COMANDOS_FOTOS:
+                arquivos = COMANDOS_FOTOS[comando]
+                for arquivo in arquivos:
+                    if os.path.exists(arquivo):
+                        sucesso = send_file_to_whatsapp(arquivo)
+                        if sucesso:
+                            print(f"Foto enviada: {os.path.basename(arquivo)}")
+                        time.sleep(1.5)  # Pausa entre fotos
+                    else:
+                        print(f"Arquivo não encontrado: {arquivo}")
+            else:
+                print(f"Comando desconhecido: [ENVIAR_FOTO:{comando}]")
+        return True
+    return False
+        
+#Sending files to whatsapp 
+def send_file_to_whatsapp(file_path):
+    try:
+        if not os.path.exists(file_path):
+            print(f"Arquivo não encontrado: {file_path}")
+            return False
+
+        # Clica no botão de anexar
+        attachment_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, attachment_button_xpath))
+        )
+        driver.execute_script("arguments[0].click();", attachment_button)
+        print("Botão de anexar clicado.")
+
+        # Seleciona o arquivo
+        document_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, document_input_xpath))
+        )
+        document_input.send_keys(file_path)
+        print(f"Arquivo selecionado: {os.path.basename(file_path)}")
+
+        # Envia
+        send_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, send_file_button_xpath))
+        )
+        driver.execute_script("arguments[0].click();", send_button)
+        print("Ficheiro enviado com sucesso!")
+        return True
+
+    except Exception as e:
+        print(f"Erro ao enviar arquivo: {e}")
+        return False
 
 # Function to open ChatGPT tab if not open
 def open_chatbot_tab():
@@ -158,6 +254,7 @@ def clear_input_field(input_elem):
         time.sleep(0.5)
     except Exception as e:
         print(f"Error clearing input field: {e}")
+      
 
 # Function to send message to ChatGPT and get response
 def get_chatgpt_response(message):
@@ -241,9 +338,20 @@ try:
             # Switch back to WhatsApp tab
             driver.switch_to.window(whatsapp_handle)
             
+            # If element unread_filter_page not found, click unread filter again
+            if not driver.find_elements(By.XPATH, unread_filter_page_xpath):
+                try:
+                    unread_filter = WebDriverWait(driver, 1).until(
+                        EC.element_to_be_clickable((By.XPATH, unread_filter_xpath))
+                    )
+                    unread_filter.click()
+                    print("Clicked unread filter again.")
+                except Exception as e:
+                    print(f"Error clicking unread filter again: {e}")
+            
             # Wait for chat list to load
             try:
-                WebDriverWait(driver, 20).until(
+                WebDriverWait(driver, 5).until(
                     EC.presence_of_all_elements_located((By.XPATH, chat_rows_xpath))
                 )
             except TimeoutException:
@@ -286,9 +394,9 @@ try:
                             WebDriverWait(driver, 10).until(
                                 EC.presence_of_element_located((By.XPATH, msg_in_xpath))
                             )
-                            chat_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
-                            clear_input_field(chat_input)
-                            chat_input.send_keys("Nao saia... Resposta a caminho" + Keys.ENTER)
+                            # chat_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
+                            # clear_input_field(chat_input)
+                            # chat_input.send_keys("Nao saia... Resposta a caminho" + Keys.ENTER)
                             # Get all incoming and outgoing messages
                             messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
                             messages_out = driver.find_elements(By.XPATH, msg_out_xpath)
@@ -343,17 +451,16 @@ try:
                                 # Switch back to WhatsApp
                                 driver.switch_to.window(whatsapp_handle)
                                 
-                                # Send response using JavaScript
                                 try:
                                     chat_input = WebDriverWait(driver, 10).until(
                                         EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath))
                                     )
-                                    clear_input_field(chat_input)
-                                    paste_content(driver, chat_input, response)
-                                    chat_input.send_keys(Keys.ENTER)  # Trigger send
-                                    print(f"Sent response to {title}: {response}")
+                                    
+                                    # Processa a resposta: envia texto + fotos se necessário
+                                    process_ai_response(response, chat_input)
+                                    
                                 except Exception as e:
-                                    print(f"Error sending response to WhatsApp: {e}")
+                                    print(f"Erro ao processar resposta: {e}")
                             else:
                                 print("No response from ChatGPT.")
 
@@ -371,7 +478,7 @@ try:
                 except Exception as e:
                     print(f"Error sending ESCAPE key: {e}")
 
-            time.sleep(5)
+            time.sleep(3)
 
         except Exception as e:
             print(f"General error: {e}")
