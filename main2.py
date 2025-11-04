@@ -8,11 +8,14 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     NoSuchElementException
 )
+from datetime import datetime
+import hashlib
+import json
 import time
 import sys
 import os
 import re
-from datetime import datetime
+
 
 # Ajuste para manter sessão logada
 user_data = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfile"
@@ -23,7 +26,7 @@ path_driver = r"D:\Alex\Projetos\Python\Chatbot\chromedriver.exe"
 options = uc.ChromeOptions()
 options.add_argument(f"--user-data-dir={user_data}")
 options.add_argument(f"--profile-directory={profile_dir}")
-options.add_argument("--headless=new")  # Enable headless mode
+# options.add_argument("--headless=new")  # Enable headless mode
 options.add_argument("--disable-gpu")  # Disable GPU for headless
 options.add_argument("--window-size=1920,1080")  # Set window size for headless
 options.add_argument("--disable-blink-features=AutomationControlled")
@@ -50,6 +53,8 @@ wait = WebDriverWait(driver, 10)
 notif_xpath = ".//span[contains(@class,'x140p0ai')]"
 unread_filter_page_xpath = '//div[@aria-placeholder="Procurar nas conversas não lidas"]'
 unread_filter_xpath = '//div[@aria-label="chat-list-filters"]//div[@id="unread-filter"]'
+all_filter_xpath = '//button[@id="all-filter"]'
+search_bar_xpath = '//div[@aria-placeholder="Procurar ou criar uma nova conversa"]'
 msg_in_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-in")]//span[@class="_ao3e selectable-text copyable-text"]'
 msg_out_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-out")]//span[@class="_ao3e selectable-text copyable-text"]'
 chat_rows_xpath = '//div[contains(@class,"x1g42fcv")]'
@@ -81,6 +86,9 @@ COMANDOS_FOTOS = {
     ],
     # Adicione outros comandos aqui
 }
+#Data files
+PENDING_FILE = "pending_responses.json"
+HISTORY_FILE = "response_history.json"
 
 # Check for CAPTCHA or QR code
 # try:
@@ -140,7 +148,167 @@ arguments[0].dispatchEvent(event)
             el)
     except Exception as e:
         print(f"Error in paste_content: {e}")
+ 
+ 
+#Saving Pending responses that failed to load from chatbot response
+def save_pending(contact, unread_messages, context_messages, payload):
+    pending = {
+        "contact": contact,
+        "unread_messages": unread_messages,
+        "context_messages": context_messages,
+        "payload": payload,
+        "last_response": None,
+        "attempts": 0,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    data = []
+    if os.path.exists(PENDING_FILE):
+        try:
+            with open(PENDING_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except:
+            pass
+
+    # Evita duplicatas
+    duplicate = any(
+        p["contact"] == contact and
+        p["unread_messages"] == unread_messages and
+        p["payload"] == payload
+        for p in data
+    )
+    if not duplicate:
+        data.append(pending)
+        with open(PENDING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"Pendente salvo: {contact}")
+    else:
+        print(f"Pendente duplicado ignorado: {contact}")
         
+#Load response history to try to respond again
+def load_response_history():
+    if not os.path.exists(HISTORY_FILE):
+        return {"last_response": "", "last_contact": "", "last_payload_hash": ""}
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {"last_response": "", "last_contact": "", "last_payload_hash": ""}
+        
+#Save Response History aftar a fail
+def save_response_history(contact, response, payload):
+    hash_obj = hashlib.md5(payload.encode('utf-8')).hexdigest()
+    data = {
+        "last_response": response,
+        "last_contact": contact,
+        "last_payload_hash": hash_obj
+    }
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False)
+        
+#Clear Pendings
+def clear_pending(contact, unread_messages):
+    if not os.path.exists(PENDING_FILE):
+        return
+    try:
+        with open(PENDING_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        data = [p for p in data if not (p["contact"] == contact and p["unread_messages"] == unread_messages)]
+        with open(PENDING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+#Process pending Responses
+def process_pending_responses():
+    if not os.path.exists(PENDING_FILE):
+        return False
+
+    try:
+        with open(PENDING_FILE, 'r', encoding='utf-8') as f:
+            pendentes = json.load(f)
+    except:
+        return False
+
+    if not pendentes:
+        return False
+
+    print(f"{len(pendentes)} respostas pendentes. Processando...")
+
+    # 1. Clique em "Todos"
+    try:
+        all_filter = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[@id="all-filter"]'))
+        )
+        all_filter.click()
+        print("Filtro 'Todos' ativado.")
+        time.sleep(2)
+    except:
+        print("Erro ao clicar em 'Todos'")
+
+    # 2. Processar cada pendente
+    for p in pendentes[:]:
+        contact = p["contact"]
+        payload = p["payload"]
+        unread = p["unread_messages"]
+
+        print(f"Processando pendente: {contact}")
+
+        try:
+            # Abrir pesquisa
+            search_bar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, '//div[@aria-placeholder="Procurar ou criar uma nova conversa"]'))
+            )
+            search_bar.click()
+            clear_input_field(search_bar)
+            paste_content(driver, search_bar, contact)
+            time.sleep(2)
+
+            # Clicar no contato
+            contact_row = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, f'.//span[@title="{contact}"]'))
+            )
+            contact_row.click()
+            print(f"Contato aberto: {contact}")
+            time.sleep(3)
+
+            # Enviar para ChatGPT
+            response = get_chatgpt_response(payload)
+            if response and response.strip():
+                driver.switch_to.window(whatsapp_handle)
+                chat_input = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath))
+                )
+                process_ai_response(response, chat_input)
+                save_response_history(contact, response, payload)
+                clear_pending(contact, unread)
+                print(f"Pendente resolvido: {contact}")
+            else:
+                p["attempts"] += 1
+                if p["attempts"] >= 3:
+                    print(f"Máximo de tentativas atingido para {contact}. Removendo.")
+                    clear_pending(contact, unread)
+                else:
+                    print(f"Tentativa {p['attempts']} falhou para {contact}")
+
+        except Exception as e:
+            print(f"Erro processando pendente {contact}: {e}")
+
+        time.sleep(3)
+
+    # 3. Voltar para "Não lidas"
+    try:
+        unread_filter = driver.find_element(By.XPATH, unread_filter_xpath)
+        unread_filter.click()
+        print("Voltou ao filtro 'Não lidas'.")
+    except:
+        pass
+
+    # Atualizar arquivo
+    with open(PENDING_FILE, 'w', encoding='utf-8') as f:
+        json.dump([p for p in pendentes if p["attempts"] < 3], f, ensure_ascii=False, indent=2)
+
+    return len(pendentes) > 0
 
 def process_ai_response(response, chat_input):
     """
@@ -264,7 +432,7 @@ def get_chatgpt_response(message):
     # Send message
     for attempt in range(3):  # Retry up to 3 times
         try:
-            input_elem = WebDriverWait(driver, 10).until(
+            input_elem = WebDriverWait(driver, 30).until(
                 EC.presence_of_element_located((By.XPATH, chatgpt_input_xpath))
             )
             clear_input_field(input_elem)
@@ -276,15 +444,16 @@ def get_chatgpt_response(message):
                     EC.element_to_be_clickable((By.XPATH, chatgpt_send_button_xpath))
                 )
                 send_button.click()
-            except (TimeoutException, NoSuchElementException):
+                print("Sent message to ChatGPT.")
+            except:
                 print("Send button not found, trying Enter key.")
                 input_elem.send_keys(Keys.ENTER)
+                print("Sent message to ChatGPT.")
             
-            print("Sent message to ChatGPT.")
             
             # Wait for streaming to start
             try:
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.XPATH, chatgpt_stop_streaming_button_xpath))
                 )
                 print("Streaming started...")
@@ -301,19 +470,33 @@ def get_chatgpt_response(message):
                 print("Timeout waiting for streaming to complete, proceeding to capture response.")
             
             # Capture the full response
-            for _ in range(3):  # Retry to handle stale elements
+            captured = False
+            latest_response = ""
+            for _ in range(5):
                 try:
                     messages = driver.find_elements(By.XPATH, chatgpt_messages_xpath)
                     if messages:
                         latest_response = messages[-1].text.strip()
-                        if latest_response:
+                        if latest_response != history["last_response"] or title != history["last_contact"]:
                             print(f"ChatGPT response: {latest_response}")
-                            return latest_response
+                            captured = True
+                            break
                     time.sleep(2)
-                except StaleElementReferenceException:
-                    print("Stale element detected, retrying to capture response...")
-            print("No response captured after retries.")
-            return None
+                except:
+                    time.sleep(1)
+
+            if not captured:
+                print("Nenhuma resposta nova ou repetida detectada → salvando como pendente")
+                save_pending(title, unread_messages, 
+                           [f"[{ts.strftime('%I:%M %p, %d/%m/%Y')}] {sender}: {text}" 
+                            for ts, sender, text in context_messages],
+                           final_payload)
+                return None
+
+            # Salvar histórico
+            save_response_history(title, latest_response, final_payload)
+            return latest_response
+            
         except (StaleElementReferenceException, NoSuchElementException) as e:
             print(f"Retry {attempt + 1}/3: Error interacting with ChatGPT input: {e}")
             time.sleep(1)
@@ -337,6 +520,11 @@ try:
         try:
             # Switch back to WhatsApp tab
             driver.switch_to.window(whatsapp_handle)
+            
+            #Process Pending Chats First
+            if process_pending_responses():
+                time.sleep(5)
+                continue
             
             # If element unread_filter_page not found, click unread filter again
             if not driver.find_elements(By.XPATH, unread_filter_page_xpath):
