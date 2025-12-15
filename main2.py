@@ -15,7 +15,7 @@ import re
 from datetime import datetime
 
 # Ajuste para manter sessão logada
-user_data = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfile"
+user_data = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfileNodeJs"
 profile_dir = "Default"
 
 path_driver = r"D:\Alex\Projetos\Python\Chatbot\chromedriver.exe"
@@ -23,7 +23,7 @@ path_driver = r"D:\Alex\Projetos\Python\Chatbot\chromedriver.exe"
 options = uc.ChromeOptions()
 options.add_argument(f"--user-data-dir={user_data}")
 options.add_argument(f"--profile-directory={profile_dir}")
-options.add_argument("--headless=new")  # Enable headless mode
+# options.add_argument("--headless=new")  # Enable headless mode
 options.add_argument("--disable-gpu")  # Disable GPU for headless
 options.add_argument("--window-size=1920,1080")  # Set window size for headless
 options.add_argument("--disable-blink-features=AutomationControlled")
@@ -39,19 +39,19 @@ options.add_argument("--disable-web-security")
 driver = uc.Chrome(
     driver_executable_path=path_driver,
     options=options,
-    version_main=141  # Match your Chrome version
+    version_main=143  # Match your Chrome version
 )
 driver.get("https://web.whatsapp.com")
 
 print("Aguardando WhatsApp Web carregar...")
 wait = WebDriverWait(driver, 10)
 
-# XPaths
-notif_xpath = ".//span[contains(@class,'x140p0ai')]"
+#WhatsApp XPaths
+notif_xpath = ".//span[contains(@aria-label,'mensagem não lida') or contains(@aria-label,'mensagens não lidas')]"
 unread_filter_page_xpath = '//div[@aria-placeholder="Procurar nas conversas não lidas"]'
-unread_filter_xpath = '//div[@aria-label="chat-list-filters"]//div[@id="unread-filter"]'
-msg_in_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-in")]//span[@class="_ao3e selectable-text copyable-text"]'
-msg_out_xpath = '//div[@id="main"]//div[@class="x1n2onr6"]//div[contains(@class,"message-out")]//span[@class="_ao3e selectable-text copyable-text"]'
+unread_filter_xpath = '//*[@id="unread-filter"]'
+msg_in_xpath = '//div[contains(@class,"message-in")]//span[contains(@class,"_ao3e selectable-text copyable-text")]'
+msg_out_xpath = '//div[contains(@class,"message-out")]//span[contains(@class,"_ao3e selectable-text copyable-text")]'
 chat_rows_xpath = '//div[contains(@class,"x1g42fcv")]'
 title_element_xpath = './/span[@title or contains(@class, "x1qlqyl8")]'
 whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and (contains(@aria-label, "Escreva na conversa") or contains(@aria-label, "Escreva no grupo"))]'
@@ -63,7 +63,10 @@ captcha_xpath = '//iframe[contains(@src, "recaptcha")]'
 qr_code_xpath = '//canvas[@aria-label="Scan me!"]'
 
 # ChatGPT XPaths
-chatbot_url = "https://chatgpt.com/g/g-p-68f67b7860e481918e75084ecf503779-assistente-de-mensagens/c/68f67c01-4fe0-832f-9316-2d5c15d47752"
+chatbot_url = "https://chatgpt.com"
+chat_name_xpath = '//span[@dir="auto"]'
+chat_rename_options_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
+chat_rename_input_xpath = '//*[@role="menuitem"]'
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
 chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
@@ -107,17 +110,6 @@ COMANDOS_FOTOS = {
             # driver.quit()
             # sys.exit(1)
 
-# Filtrar mensagens não lidas
-for _ in range(3):  # Retry up to 3 times
-    try:
-        wait.until(EC.element_to_be_clickable((By.XPATH, unread_filter_xpath)))
-        unread_filter = driver.find_element(By.XPATH, unread_filter_xpath)
-        unread_filter.click()
-        print("Filtered for unread messages.")
-        break
-    except Exception as e:
-        print(f"Error clicking unread filter: {e}")
-        time.sleep(2)
 
 # Variables for tab handles
 whatsapp_handle = driver.current_window_handle
@@ -166,7 +158,7 @@ def process_ai_response(response, chat_input):
         paste_content(driver, chat_input, texto_limpo)
         chat_input.send_keys(Keys.ENTER)
         print(f"Texto enviado: {texto_limpo}")
-        time.sleep(1)  # Pequena pausa entre texto e foto
+        time.sleep(2)  # Pequena pausa entre texto e foto
 
     # Envia as fotos, se houver comandos
     if comandos_encontrados:
@@ -178,7 +170,7 @@ def process_ai_response(response, chat_input):
                         sucesso = send_file_to_whatsapp(arquivo)
                         if sucesso:
                             print(f"Foto enviada: {os.path.basename(arquivo)}")
-                        time.sleep(1.5)  # Pausa entre fotos
+                        time.sleep(3)  # Pausa entre fotos
                     else:
                         print(f"Arquivo não encontrado: {arquivo}")
             else:
@@ -251,7 +243,7 @@ def clear_input_field(input_elem):
         input_elem.click()
         input_elem.send_keys(Keys.CONTROL + "a")  # Select all
         input_elem.send_keys(Keys.DELETE)  # Delete
-        time.sleep(0.5)
+        time.sleep(3)
     except Exception as e:
         print(f"Error clearing input field: {e}")
       
@@ -276,11 +268,12 @@ def get_chatgpt_response(message):
                     EC.element_to_be_clickable((By.XPATH, chatgpt_send_button_xpath))
                 )
                 send_button.click()
+                print("Sent message to ChatGPT. By Click")                
             except (TimeoutException, NoSuchElementException):
                 print("Send button not found, trying Enter key.")
                 input_elem.send_keys(Keys.ENTER)
-            
-            print("Sent message to ChatGPT.")
+                print("Sent message to ChatGPT. By ENTER")
+
             
             # Wait for streaming to start
             try:
@@ -309,14 +302,14 @@ def get_chatgpt_response(message):
                         if latest_response:
                             print(f"ChatGPT response: {latest_response}")
                             return latest_response
-                    time.sleep(2)
+                    time.sleep(3)
                 except StaleElementReferenceException:
                     print("Stale element detected, retrying to capture response...")
             print("No response captured after retries.")
             return None
         except (StaleElementReferenceException, NoSuchElementException) as e:
             print(f"Retry {attempt + 1}/3: Error interacting with ChatGPT input: {e}")
-            time.sleep(1)
+            time.sleep(3)
     print("Failed to send message to ChatGPT after retries.")
     return None
 
@@ -331,6 +324,18 @@ def parse_timestamp(timestamp_str):
         return None
     except:
         return None
+        
+# Filtrar mensagens não lidas
+for _ in range(3):  # Retry up to 3 times
+    try:
+        wait.until(EC.presence_of_element_located((By.XPATH, unread_filter_xpath)))
+        unread_filter = driver.find_element(By.XPATH, unread_filter_xpath)
+        unread_filter.click()
+        print("Filtered for unread messages.")
+        break
+    except Exception as e:
+        print(f"Error clicking unread filter: {e}")
+        time.sleep(3)        
 
 try:
     while True:
@@ -391,9 +396,8 @@ try:
                             print(f"Opened conversation with {title}.")
 
                             # Wait for messages to load
-                            WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.XPATH, msg_in_xpath))
-                            )
+                            if WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, msg_in_xpath))):
+                                print('Achei a msg_in_xpath')
                             # chat_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
                             # clear_input_field(chat_input)
                             # chat_input.send_keys("Nao saia... Resposta a caminho" + Keys.ENTER)
@@ -478,7 +482,7 @@ try:
                 except Exception as e:
                     print(f"Error sending ESCAPE key: {e}")
 
-            time.sleep(3)
+            time.sleep(10)
 
         except Exception as e:
             print(f"General error: {e}")
