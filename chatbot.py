@@ -50,33 +50,59 @@ wait = WebDriverWait(driver, 10)
 # ChatGPT XPaths
 chatbot_url = "https://chatgpt.com"
 chat_name_xpath = '//span[@dir="auto"]'
-chat_rename_options_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
+chat_menu_button_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
 chat_rename_input_xpath = '//*[@role="menuitem"]'
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
 chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
 chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Parar transmissão"]'
 
-def rename_chat(new_name):
+def clear_input_field(input_elem):
     try:
-        button = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, chat_rename_options_xpath)))
-        print("found the rename option")
-        try:
-            button.click()
-            print("Clicked the button")
-            try:
-                input_dir = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
-                print("Found the input to rename the dir")
-                input_dir[2].click()
-                print("clicked the input")
-            except:
-                print("Didn't found the input")
-        except:
-            print("Failed to click the rename option button")
-    except:
-        print("Didn't found! the rename option")
+        input_elem.click()
+        input_elem.send_keys(Keys.CONTROL + "a")  # Select all
+        input_elem.send_keys(Keys.DELETE)  # Delete
+        time.sleep(3)
+    except Exception as e:
+        print(f"Error clearing input field: {e}")
+
+def rename_chatgpt_to_contact(title):
+    try:
+        current_title = driver.title
+        if current_title == title:
+            return True
+        print(f"Renomeando chat para: {title}")
+
+        menu_btn = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_menu_button_xpath)))
+        menu_btn.click()
+        time.sleep(1)
         
-rename_chat("a")
+        print("clicked the munu button")
+        rename_btn = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
+        rename_btn[2].click()
+        print("Clickerd the rename_btn")
+        active = driver.switch_to.active_element
+        print("Found the body element")
+        time.sleep(2)
+        active.send_keys(title)
+        active.send_keys(Keys.ENTER)
+        print(f"Chat renomeado para: {title}")
+        return True
+    except Exception as e:
+        print(f"Erro ao renomear chat: {e}")
+        return False
+
+
+chat_name = WebDriverWait(driver, 10).until(
+    EC.presence_of_element_located((
+        By.XPATH,
+        "//span[@dir='auto' and normalize-space(.)='Alex']"
+    ))
+)
+chat_name.click()
+if chat_name:
+    print("Achei o chat_name Alex")
+rename_chatgpt_to_contact("Alex")
     
 input()
 

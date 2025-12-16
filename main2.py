@@ -50,8 +50,8 @@ wait = WebDriverWait(driver, 10)
 notif_xpath = ".//span[contains(@aria-label,'mensagem não lida') or contains(@aria-label,'mensagens não lidas')]"
 unread_filter_page_xpath = '//div[@aria-placeholder="Procurar nas conversas não lidas"]'
 unread_filter_xpath = '//*[@id="unread-filter"]'
-msg_in_xpath = '//div[contains(@class,"message-in")]//span[contains(@class,"_ao3e selectable-text copyable-text")]'
-msg_out_xpath = '//div[contains(@class,"message-out")]//span[contains(@class,"_ao3e selectable-text copyable-text")]'
+msg_in_xpath = '//div[contains(@class,"message-in")]'
+msg_out_xpath = '//div[contains(@class,"message-out")]'
 chat_rows_xpath = '//div[contains(@class,"x1g42fcv")]'
 title_element_xpath = './/span[@title or contains(@class, "x1qlqyl8")]'
 whatsapp_input_xpath = '//div[@aria-owns="emoji-suggestion" and (contains(@aria-label, "Escreva na conversa") or contains(@aria-label, "Escreva no grupo"))]'
@@ -65,7 +65,7 @@ qr_code_xpath = '//canvas[@aria-label="Scan me!"]'
 # ChatGPT XPaths
 chatbot_url = "https://chatgpt.com"
 chat_name_xpath = '//span[@dir="auto"]'
-chat_rename_options_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
+chat_menu_button_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
 chat_rename_input_xpath = '//*[@role="menuitem"]'
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
@@ -247,12 +247,40 @@ def clear_input_field(input_elem):
     except Exception as e:
         print(f"Error clearing input field: {e}")
       
+def rename_chatgpt_to_contact(contact):
+    try:
+        current_title = driver.title
+        if current_title == contact:
+            return True
+        print(f"Renomeando chat para: {contact}")
+
+        menu_btn = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_menu_button_xpath)))
+        menu_btn.click()
+        time.sleep(1)
+        
+        print("clicked the munu button")
+        rename_btn = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
+        rename_btn[2].click()
+        print("Clickerd the rename_btn")
+        active = driver.switch_to.active_element
+        print("Found the body element")
+        active.send_keys(contact)
+        active.send_keys(Keys.ENTER)
+        print(f"Chat renomeado para: {contact}")
+        return True
+    except Exception as e:
+        print(f"Erro ao renomear chat: {e}")
+        return False
 
 # Function to send message to ChatGPT and get response
-def get_chatgpt_response(message):
+def get_chatgpt_response(message,contact):
     if not open_chatbot_tab():
         return None
     
+    chat_name = //div[@id'history']//span[@dir='auto' and normalize-space(.)='Alex']
+    if chat_name:
+        print("Achei o chat_name")
+
     # Send message
     for attempt in range(3):  # Retry up to 3 times
         try:
@@ -301,6 +329,7 @@ def get_chatgpt_response(message):
                         latest_response = messages[-1].text.strip()
                         if latest_response:
                             print(f"ChatGPT response: {latest_response}")
+                            rename_chatgpt_to_contact(contact)
                             return latest_response
                     time.sleep(3)
                 except StaleElementReferenceException:
@@ -396,8 +425,10 @@ try:
                             print(f"Opened conversation with {title}.")
 
                             # Wait for messages to load
-                            if WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, msg_in_xpath))):
-                                print('Achei a msg_in_xpath')
+                            try:
+                                driver.find_elements(By.XPATH, msg_in_xpath)
+                            except:
+                                print("Failed to found the messages")
                             # chat_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, whatsapp_input_xpath)))
                             # clear_input_field(chat_input)
                             # chat_input.send_keys("Nao saia... Resposta a caminho" + Keys.ENTER)
@@ -450,7 +481,7 @@ try:
                             print(f"Final payload for ChatGPT:\n{final_payload}")
                             
                             # Get response from ChatGPT
-                            response = get_chatgpt_response(final_payload)
+                            response = get_chatgpt_response(final_payload,title)
                             if response:
                                 # Switch back to WhatsApp
                                 driver.switch_to.window(whatsapp_handle)
