@@ -1,90 +1,148 @@
 import undetected_chromedriver as uc
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    TimeoutException,
-    StaleElementReferenceException,
-    NoSuchElementException
-)
+from selenium.common.exceptions import TimeoutException
 import time
-import sys
+import random
 import os
-import re
-from datetime import datetime
 
-# Ajuste para manter sessão logada
-user_data = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfileNodeJs"
-profile_dir = "Default"
+# ================= CONFIGURAÇÕES =================
 
-path_driver = r"D:\Alex\Projetos\Python\Chatbot\chromedriver.exe"
+URL = "https://chat.deepseek.com/a/chat/s/04095441-fa00-4360-92e8-53c7f1998d05"
 
-options = uc.ChromeOptions()
-options.add_argument(f"--user-data-dir={user_data}")
-options.add_argument(f"--profile-directory={profile_dir}")
-# options.add_argument("--headless=new")  # Enable headless mode
-options.add_argument("--disable-gpu")  # Disable GPU for headless
-options.add_argument("--window-size=1920,1080")  # Set window size for headless
-options.add_argument("--disable-blink-features=AutomationControlled")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
-options.add_argument("--disable-infobars")
-options.add_argument("--disable-notifications")
-options.add_argument("--blink-settings=imagesEnabled=true")
-options.add_argument("--disable-features=OnlyBlockMainFrame")
-options.add_argument("--disable-web-security")
+USER_DATA_DIR = r"D:\Alex\Projetos\Python\Chatbot\ChromeProfilePython"
+PROFILE_DIR = "Default"
+CHROMEDRIVER_PATH = r"D:\Alex\Projetos\Python\Chatbot\chromedriver.exe"
 
-driver = uc.Chrome(
-    driver_executable_path=path_driver,
-    options=options,
-    version_main=143  # Match your Chrome version
-)
-driver.get("https://chatgpt.com")
+ARQUIVO_PERGUNTAS = "perguntas.txt"
 
-print("Aguardando chatgpt carregar...")
-wait = WebDriverWait(driver, 10)
+# ================= FUNÇÕES =================
+
+def ler_perguntas_txt(caminho):
+    if not os.path.exists(caminho):
+        raise FileNotFoundError(f"Arquivo {caminho} não encontrado")
+
+    with open(caminho, "r", encoding="utf-8") as f:
+        return [linha.strip() for linha in f if linha.strip()]
 
 
-# ChatGPT XPaths
-chatbot_url = "https://chatgpt.com"
-chat_name_xpath = '//span[@dir="auto"]'
-chat_rename_options_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
-chat_rename_input_xpath = '//*[@role="menuitem"]'
-chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
-chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
-chatgpt_messages_xpath = "//article[@data-turn='assistant']//div[contains(@class,'markdown')]"
-chatgpt_stop_streaming_button_xpath = '//button[@aria-label="Parar transmissão"]'
+def limpar_input(input_elem):
+    input_elem.click()
+    input_elem.send_keys(Keys.CONTROL + "a")
+    input_elem.send_keys(Keys.DELETE)
+    time.sleep(0.5)
 
-def rename_chat(new_name):
+
+def escrever_pergunta(wait, pergunta):
+    input_box = wait.until(
+        EC.presence_of_element_located(
+            (By.XPATH, '//textarea[contains(@class,"ds-scroll-area")]')
+        )
+    )
+    limpar_input(input_box)
+    input_box.send_keys(pergunta)
+    input_box.send_keys(Keys.ENTER)
+
+
+def esperar_ciclo_completo_resposta(driver, wait):
+    """
+    Estados:
+    1) disabled (idle)
+    2) spinner (processando)
+    3) streaming
+    4) disabled (idle final)
+    """
+
+    # 1️⃣ Esperar spinner aparecer (se aparecer)
     try:
-        button = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, chat_rename_options_xpath)))
-        print("found the rename option")
-        try:
-            button.click()
-            print("Clicked the button")
-            try:
-                input_dir = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
-                print("Found the input to rename the dir")
-                input_dir[2].click()
-                print("clicked the input")
-            except:
-                print("Didn't found the input")
-        except:
-            print("Failed to click the rename option button")
-    except:
-        print("Didn't found! the rename option")
-        
-rename_chat("a")
-    
-input()
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "div.ds-loading")
+            )
+        )
+        print("🌀 Spinner apareceu")
+    except TimeoutException:
+        print("ℹ️ Spinner não apareceu")
 
-for _ in range(3):  # Retry up to 3 times
+    # 2️⃣ Esperar spinner desaparecer
     try:
-        print(driver.title)
-    except Exception as e:
-        print("Nao achei o titulo")
-    time.sleep(3)
+        wait.until(
+            EC.invisibility_of_element_located(
+                (By.CSS_SELECTOR, "div.ds-loading")
+            )
+        )
+        print("✅ Spinner desapareceu")
+    except TimeoutException:
+        print("⚠️ Spinner demorou demais")
 
-driver.quit()
+    # 3️⃣ Esperar botão voltar ao estado idle (disabled sem spinner)
+    def estado_final(driver):
+        botao = driver.find_element(
+            By.CSS_SELECTOR, "div._7436101[role='button']"
+        )
+
+        aria = botao.get_attribute("aria-disabled")
+        classes = botao.get_attribute("class")
+
+        spinner_existe = len(
+            driver.find_elements(By.CSS_SELECTOR, "div.ds-loading")
+        ) > 0
+
+        return (
+            aria == "true"
+            and "ds-icon-button--disabled" in classes
+            and not spinner_existe
+        )
+
+    wait.until(estado_final)
+    print("🏁 Resposta finalizada (idle)")
+
+
+# ================= MAIN =================
+
+def main():
+    perguntas = ler_perguntas_txt(ARQUIVO_PERGUNTAS)
+    print(f"📄 {len(perguntas)} perguntas carregadas")
+
+    options = uc.ChromeOptions()
+    options.add_argument(f"--user-data-dir={USER_DATA_DIR}")
+    options.add_argument(f"--profile-directory={PROFILE_DIR}")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = uc.Chrome(
+        driver_executable_path=CHROMEDRIVER_PATH,
+        options=options,
+        version_main=143
+    )
+
+    driver.get(URL)
+    wait = WebDriverWait(driver, 180)
+
+    input("🔐 Confirma que estás logado e pressiona ENTER...")
+
+    for i, pergunta in enumerate(perguntas, start=1):
+        print(f"\n➡️ Pergunta {i}/{len(perguntas)}")
+        print(pergunta)
+
+        escrever_pergunta(wait, pergunta)
+
+        print("🧠 Aguardando resposta...")
+        esperar_ciclo_completo_resposta(driver, wait)
+
+        pausa = random.uniform(2, 4)
+        time.sleep(pausa)
+
+    print("\n✅ Todas as perguntas foram processadas!")
+    input("Pressiona ENTER para fechar...")
+    driver.quit()
+
+
+if __name__ == "__main__":
+    main()
