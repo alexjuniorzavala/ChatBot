@@ -50,7 +50,7 @@ wait = WebDriverWait(driver, 10)
 # ChatGPT XPaths
 chatbot_url = "https://chatgpt.com"
 chat_name_xpath = '//span[@dir="auto"]'
-chat_menu_button_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
+chat_menu_button_xpath ='.//div[contains(@class,"trailing text-token-text-tertiary")]'
 chat_rename_input_xpath = '//*[@role="menuitem"]'
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
@@ -65,6 +65,23 @@ def clear_input_field(input_elem):
         time.sleep(3)
     except Exception as e:
         print(f"Error clearing input field: {e}")
+        
+def paste_content(driver, el, content):
+    try:
+        driver.execute_script(
+            f'''
+const text = `{content}`;
+const dataTransfer = new DataTransfer();
+dataTransfer.setData('text', text);
+const event = new ClipboardEvent('paste', {{
+  clipboardData: dataTransfer,
+  bubbles: true
+}});
+arguments[0].dispatchEvent(event)
+''',
+            el)
+    except Exception as e:
+        print(f"Error in paste_content: {e}")
 
 def rename_chatgpt_to_contact(title):
     try:
@@ -73,11 +90,16 @@ def rename_chatgpt_to_contact(title):
             return True
         print(f"Renomeando chat para: {title}")
 
-        menu_btn = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_menu_button_xpath)))
+        chat_to_rename_xpath = '//*[@id="history"]/a[@data-active]'
+        chat_to_rename = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_to_rename_xpath)))
+        print('Achei o chat ativo')
+        menu_btn = chat_to_rename.find_element(By.XPATH, chat_menu_button_xpath)
+        print('achei o botao de opcoes para renomear')
         menu_btn.click()
+        print('Cliquei nele')
         time.sleep(1)
         
-        print("clicked the munu button")
+        print("clicked the menu button")
         rename_btn = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
         rename_btn[2].click()
         print("Clickerd the rename_btn")
@@ -91,18 +113,101 @@ def rename_chatgpt_to_contact(title):
     except Exception as e:
         print(f"Erro ao renomear chat: {e}")
         return False
+    
+def get_chatgpt_response(message):
 
+    # Send message
+    for attempt in range(3):  # Retry up to 3 times
+        try:
+            input_elem = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, chatgpt_input_xpath))
+            )
+            clear_input_field(input_elem)
+            paste_content(driver, input_elem, message)
+            
+            # Try clicking send button
+            try:
+                send_button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, chatgpt_send_button_xpath))
+                )
+                send_button.click()
+                print("Sent message to ChatGPT. By Click")                
+            except (TimeoutException, NoSuchElementException):
+                print("Send button not found, trying Enter key.")
+                input_elem.send_keys(Keys.ENTER)
+                print("Sent message to ChatGPT. By ENTER")
 
-chat_name = WebDriverWait(driver, 10).until(
-    EC.presence_of_element_located((
-        By.XPATH,
-        "//span[@dir='auto' and normalize-space(.)='Alex']"
-    ))
-)
-chat_name.click()
-if chat_name:
-    print("Achei o chat_name Alex")
-rename_chatgpt_to_contact("Alex")
+            
+            # Wait for streaming to start
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, chatgpt_stop_streaming_button_xpath))
+                )
+                print("Streaming started...")
+            except TimeoutException:
+                print("No streaming button detected, possibly instant response.")
+            
+            # Wait for streaming to complete (button disappears)
+            try:
+                WebDriverWait(driver, 60).until(
+                    EC.invisibility_of_element_located((By.XPATH, chatgpt_stop_streaming_button_xpath))
+                )
+                print("Streaming completed.")
+            except TimeoutException:
+                print("Timeout waiting for streaming to complete, proceeding to capture response.")
+            
+            # Capture the full response
+            for _ in range(3):  # Retry to handle stale elements
+                try:
+                    messages = driver.find_elements(By.XPATH, chatgpt_messages_xpath)
+                    if messages:
+                        latest_response = messages[-1].text.strip()
+                        if latest_response:
+                            print(f"ChatGPT response: {latest_response}")
+                            return latest_response
+                    time.sleep(3)
+                except StaleElementReferenceException:
+                    print("Stale element detected, retrying to capture response...")
+            print("No response captured after retries.")
+            return None
+        except (StaleElementReferenceException, NoSuchElementException) as e:
+            print(f"Retry {attempt + 1}/3: Error interacting with ChatGPT input: {e}")
+            time.sleep(3)
+    print("Failed to send message to ChatGPT after retries.")
+    return None
+    
+def find_the_contact(contact):
+    chat_name = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((
+            By.XPATH,
+            f"//span[@dir='auto' and normalize-space(.)='{contact}']"
+        ))
+    )
+    return chat_name
+
+contact = '1234'
+try:
+    chat_name = find_the_contact(contact)
+    print(f"Achei o chat_name {contact}")
+    chat_name.click()
+except:
+    print(f"Nao achei o chat_name {contact}. Criando novo chat")
+    new_chat_xpath = '//*[@id="stage-slideover-sidebar"]/div/div[2]/nav/aside/a[1]'
+    new_chat =  WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((
+            By.XPATH,
+            new_chat_xpath
+        ))
+    )
+    print('Achei o botao para iniciar novo chat')
+    new_chat.click()
+    print('cliquei no botao')
+    get_chatgpt_response("Hola")
+    print('Peguei a resposta do chatgpt')
+    rename_chatgpt_to_contact(contact)
+    print('Renomiei o chat com sucesso')
+    
+    
     
 input()
 

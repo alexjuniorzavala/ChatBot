@@ -64,8 +64,9 @@ qr_code_xpath = '//canvas[@aria-label="Scan me!"]'
 
 # ChatGPT XPaths
 chatbot_url = "https://chatgpt.com"
-chat_name_xpath = '//span[@dir="auto"]'
-chat_menu_button_xpath ='//*[@id="history"]//div[contains(@class,"trailing text-token-text-tertiary")]'
+new_chat_xpath = '//*[@id="stage-slideover-sidebar"]/div/div[2]/nav/aside/a[1]'
+chat_to_rename_xpath = '//*[@id="history"]/a[@data-active]'
+chat_menu_button_xpath ='.//div[contains(@class,"trailing text-token-text-tertiary")]'
 chat_rename_input_xpath = '//*[@role="menuitem"]'
 chatgpt_input_xpath = '//div[@contenteditable="true" and @id="prompt-textarea"]'
 chatgpt_send_button_xpath = '//button[@aria-label="Enviar prompt" or contains(@id, "composer-submit-button")]'
@@ -145,7 +146,7 @@ def process_ai_response(response, chat_input):
     if not response:
         return False
 
-    # Regex para capturar todos os tokens [ENVIAR_FOTO:XXX]
+    # Regex para capturar todos os tokens [ENVIAR_DOCUMENTO:XXX]
     pattern = r'\[ENVIAR_DOCUMENTO:([^\]]+)\]'
     comandos_encontrados = re.findall(pattern, response)
 
@@ -248,39 +249,103 @@ def clear_input_field(input_elem):
         print(f"Error clearing input field: {e}")
       
 def rename_chatgpt_to_contact(contact):
+    """Renomeia o chat ativo no ChatGPT para o nome do contato.
+
+    Melhorias:
+    - Procura pelo item de menu que contenha texto relacionado a "mudar/renomear" em vez de indexar a lista.
+    - Corrige o uso de `driver.switch_to.active_element[0]` (que causava 'WebElement' object is not subscriptable).
+    - Tenta localizar o campo de entrada de forma robusta (input[type=text], role=textbox ou contenteditable).
+    """
     try:
-        current_title = driver.title
-        if current_title == contact:
-            return True
         print(f"Renomeando chat para: {contact}")
 
-        menu_btn = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_menu_button_xpath)))
+        chat_to_rename = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, chat_to_rename_xpath)))
+        print('Achei o chat ativo')
+        menu_btn = chat_to_rename.find_element(By.XPATH, chat_menu_button_xpath)
+        print('achei o botao de opcoes para renomear')
         menu_btn.click()
-        time.sleep(1)
-        
-        print("clicked the munu button")
-        rename_btn = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath)))
-        rename_btn[2].click()
-        print("Clickerd the rename_btn")
-        active = driver.switch_to.active_element
-        print("Found the body element")
-        active.send_keys(contact)
-        active.send_keys(Keys.ENTER)
+        print('Cliquei nele')
+
+        # Aguarda itens do menu e tenta encontrar o que contenha texto de renomear
+        menu_items = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.XPATH, chat_rename_input_xpath))
+        )
+
+        rename_item = None
+        for item in menu_items:
+            try:
+                txt = item.text.strip().lower()
+                if 'mudar' in txt or 'renomear' in txt or 'change' in txt or 'mudar o nome' in txt:
+                    rename_item = item
+                    break
+            except Exception:
+                continue
+
+        # Fallback: usar um índice conhecido se não achar pelo texto
+        if rename_item is None:
+            if len(menu_items) >= 3:
+                rename_item = menu_items[2]
+            else:
+                print('Rename menu item not found.')
+                return False
+
+        driver.execute_script("arguments[0].click();", rename_item)
+        print("Clicked the rename menu item")
+
+        # Agora localizar o campo onde digitar o novo nome
+        input_elem = None
+        try:
+            input_elem = WebDriverWait(driver, 8).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@type='text' or @role='textbox']"))
+            )
+        except Exception:
+            # tentar achar contenteditable se input não existir
+            try:
+                input_elem = WebDriverWait(driver, 8).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@contenteditable='true' and (not(@aria-hidden) or @role='textbox')]"))
+                )
+            except Exception:
+                # última tentativa: active_element (objeto único, sem index)
+                try:
+                    input_elem = driver.switch_to.active_element
+                except Exception:
+                    input_elem = None
+
+        if input_elem is None:
+            print('Campo de entrada para renomear não encontrado.')
+            return False
+
+        clear_input_field(input_elem)
+        input_elem.send_keys(contact)
+        input_elem.send_keys(Keys.ENTER)
         print(f"Chat renomeado para: {contact}")
         return True
+
     except Exception as e:
         print(f"Erro ao renomear chat: {e}")
         return False
-
-# Function to send message to ChatGPT and get response
-def get_chatgpt_response(message,contact):
+        
+#Find the contact chat on chatgpt
+def find_the_contact(contact):
     if not open_chatbot_tab():
         return None
-    
-    chat_name = //div[@id'history']//span[@dir='auto' and normalize-space(.)='Alex']
-    if chat_name:
-        print("Achei o chat_name")
+    try:
+        chat_name = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((
+                By.XPATH,
+                f"//span[@dir='auto' and normalize-space(.)='{contact}']"
+            ))
+        )
+        print("Achei o chat")
+        return True
+    except:
+        print(f"Nao achei o chat! Criando novo chat: '{contact}'")
+        return False
 
+# Function to send message to ChatGPT and get response
+def get_chatgpt_response(message):
+    if not open_chatbot_tab():
+        return None
     # Send message
     for attempt in range(3):  # Retry up to 3 times
         try:
@@ -329,7 +394,6 @@ def get_chatgpt_response(message,contact):
                         latest_response = messages[-1].text.strip()
                         if latest_response:
                             print(f"ChatGPT response: {latest_response}")
-                            rename_chatgpt_to_contact(contact)
                             return latest_response
                     time.sleep(3)
                 except StaleElementReferenceException:
@@ -434,54 +498,60 @@ try:
                             # chat_input.send_keys("Nao saia... Resposta a caminho" + Keys.ENTER)
                             # Get all incoming and outgoing messages
                             messages_in = driver.find_elements(By.XPATH, msg_in_xpath)
-                            messages_out = driver.find_elements(By.XPATH, msg_out_xpath)
-                            
-                            # Combine and sort messages by timestamp
-                            all_messages = []
-                            for msg in messages_in:
-                                try:
-                                    parent = msg.find_element(By.XPATH, "./ancestor::div[@data-pre-plain-text]")
-                                    timestamp_str = parent.get_attribute("data-pre-plain-text")
-                                    timestamp = parse_timestamp(timestamp_str)
-                                    sender = "Client"
-                                    all_messages.append((timestamp, sender, msg.text.strip()))
-                                except:
-                                    continue
-                            for msg in messages_out:
-                                try:
-                                    parent = msg.find_element(By.XPATH, "./ancestor::div[@data-pre-plain-text]")
-                                    timestamp_str = parent.get_attribute("data-pre-plain-text")
-                                    timestamp = parse_timestamp(timestamp_str)
-                                    sender = "Assistant"
-                                    all_messages.append((timestamp, sender, msg.text.strip()))
-                                except:
-                                    continue
 
-                            # Sort by timestamp (newest first) and take last 4
-                            all_messages.sort(key=lambda x: x[0], reverse=True)
-                            context_messages = all_messages[:4]  # Last 4 interactions
-                            
-                            # Get unread messages (last notif_count)
-                            unread_messages = [msg.text.strip() for msg in messages_in[-notif_count:]]
-                            if not unread_messages:
+                            # Determine how many unread messages to take (safeguard against bounds)
+                            count = min(notif_count, len(messages_in))
+                            if count <= 0:
                                 print("No unread messages found.")
                                 continue
-                            
-                            print(f"Unread messages from {title}: {unread_messages}")
-                            
-                            # Build context string
-                            contact_line = f"Mensagem enviada por: {title}"
-                            context_lines = ["Mensagens de contexto:"]
-                            for timestamp, sender, text in context_messages:
-                                context_lines.append(f"[{timestamp.strftime('%I:%M %p, %d/%m/%Y')}] {sender}: {text}")
-                            context_str = "\n".join(context_lines)
-                            unread_str = "\nMensagem não lida:\n" + "\n".join(unread_messages)
-                            final_payload = f"{contact_line}\n\n{context_str}\n\n{unread_str}"
-                            
+
+                            # Take only the unread incoming messages
+                            unread_elems = messages_in[-count:]
+                            unread_texts = []
+                            for el in unread_elems:
+                                try:
+                                    text = el.text.strip()
+                                    if text:
+                                        unread_texts.append(text)
+                                except Exception:
+                                    continue
+
+                            if not unread_texts:
+                                print("No unread message texts found.")
+                                continue
+
+                            # Build payload with only the unread messages (no context, no dates)
+                            final_payload = f"Mensagens não lidas de {title}:\n" + "\n".join(unread_texts)
                             print(f"Final payload for ChatGPT:\n{final_payload}")
-                            
                             # Get response from ChatGPT
-                            response = get_chatgpt_response(final_payload,title)
+
+                            if not open_chatbot_tab():
+                                response = False
+                            try:
+                                chat_name = WebDriverWait(driver, 10).until(
+                                    EC.presence_of_element_located((
+                                        By.XPATH,
+                                        f"//span[@dir='auto' and normalize-space(.)='{title}']"
+                                    ))
+                                )
+                                print("Achei o chat")
+                                chat_name.click()
+                                response = get_chatgpt_response(final_payload)
+                            except:
+                                print(f"Nao achei o chat_name {title}. Criando novo chat")
+                                new_chat =  WebDriverWait(driver, 10).until(
+                                    EC.presence_of_element_located((
+                                        By.XPATH,
+                                        new_chat_xpath
+                                    ))
+                                )
+                                print('Achei o botao para iniciar novo chat')
+                                new_chat.click()
+                                print('cliquei no botao')
+                                response = get_chatgpt_response(final_payload)
+                                rename_chatgpt_to_contact(title)                          
+
+                                
                             if response:
                                 # Switch back to WhatsApp
                                 driver.switch_to.window(whatsapp_handle)
